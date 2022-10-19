@@ -9,4 +9,4 @@ A guide on how to deploy an container-based application on [AWS Elastic Containe
 
 ## **Repository Structure.**
 
-The code is organised in two folders: [*Infrastructure*](Infrastructure\infra.md) and [*Application*](Application\application.md). The former includes an yaml file with a template configuration of the AWS infrastructure that is needed for our application to run. The latter contains the code for an elementary API written in python using the [FastAPI](https://fastapi.tiangolo.com/) library.
+The code is organised in two folders: **Infrastructure** and **Application**. The former includes an yaml file with a template configuration of the AWS infrastructure that is needed for our application to run. The latter contains the code for an elementary API written in python using the [FastAPI](https://fastapi.tiangolo.com/) library.
