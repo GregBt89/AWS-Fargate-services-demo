@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create the namespace for the cloudmap."
+
+Parameters:
+    DNSNamespace:
+      Description: "Provide a DNS or use default app.dev"
+      Type: String
+      Default: app.dev
+
+Resources:
+  # Namespaces for front- and back-end applications
+  CloudMapFrontend:
+    Type: 'AWS::ServiceDiscovery::PrivateDnsNamespace'
+    Properties:
+      Description: "Service Map for Docker Compose project ml5"
+      Name: !Join ['.', ['frontend', !Ref DNSNamespace]]
+      Vpc: !ImportValue devNetwork-VPC
+      Tags:
+        - Key: namespace
+          Value: !Join ['.', ['frontend', !Ref DNSNamespace]]
+
+  CloudMapBackend:
+    Type: 'AWS::ServiceDiscovery::PrivateDnsNamespace'
+    Properties:
+      Description: Service Map for Docker Compose project ml5
+      Name: !Join ['.', ['backend', !Ref DNSNamespace]]
+      Vpc: !ImportValue devNetwork-VPC
+      Tags:
+        - Key: namespace
+          Value: !Join ['.', ['backend', !Ref DNSNamespace]]
+
+Outputs:
+
+  frontendNamespaceID:
+    Description: 'The id of the namespace for frontend services.'
+    Value: !Ref CloudMapFrontend
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, frontendNSid]]
+    
+  frontendNamespaceHS:
+    Description: 'The frontend hosted zone nameserver. For example the default DNS namespace is: frontend.app.dev'
+    Value: !Join ['.', ['frontend', !Ref DNSNamespace]]
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, frontendHZnameserver]]
+
+  backendNamespace:
+    Description: 'The id of the namespace for backend services.'
+    Value: !Ref CloudMapBackend
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, backendNSid]]
+
+  backendNamespaceHS:
+    Description: 'The backend hosted zone nameserver. For example the default DNS namespace is: backend.app.dev'
+    Value: !Join ['.', ['backend', !Ref DNSNamespace]]
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, backendHZnameserver]]
+

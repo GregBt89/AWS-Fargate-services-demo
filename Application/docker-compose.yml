@@ -1,0 +1,46 @@
+version: '3'
+services:
+  opt:
+    build: 
+      context: ./backend
+    environment:
+      - URL_PARAM=opt
+      - DISPLAY_NAME=Optimizer
+      - NGINX_SERVER=nginx:8000
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=5000
+      - UVICORN_WORKERS=1
+  ihub:
+    build: 
+      context: ./backend
+    environment:
+      - URL_PARAM=ihub
+      - DISPLAY_NAME=Information Hub
+      - NGINX_SERVER=nginx:8000
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=5001
+      - UVICORN_WORKERS=1
+  web:
+    build: 
+      context: ./backend
+    environment:
+      - URL_PARAM=web
+      - DISPLAY_NAME=Web 
+      - NGINX_SERVER=nginx:8000
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=5002
+      - UVICORN_WORKERS=1
+  nginx:
+    build: 
+      context: ./frontend
+    environment:
+      - LISTEN=8000
+      - OPT_SERVER_PORT=opt:5000
+      - IHUB_SERVER_PORT=ihub:5001
+      - WEB_SERVER_PORT=web:5002
+    depends_on:
+      - opt
+      - ihub
+      - web
+    ports:
+      - 8000:8000

@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create the network for ECS services"
+
+Parameters:
+  NameOfCluster:
+    Description: "Provide a name for a ecs cluster or use default name: dev-Cluster"
+    Type: String
+    Default: devCluster
+
+Resources:
+  # Define the VPC
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "20.0.0.0/16"
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+      InstanceTenancy: default
+
+  # Define the subnets
+  Public1A:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: Fn::Select
+       - 0
+       - !GetAZs ""
+      CidrBlock: "20.0.1.0/24"
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: True
+
+
+  Public1B:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: Fn::Select
+       - 1
+       - !GetAZs ""
+      CidrBlock: "20.0.2.0/24"
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: True
+
+  Private1A:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: Fn::Select
+       - 0
+       - !GetAZs ""
+      CidrBlock: "20.0.3.0/24"
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: False
+
+  Private1B:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: Fn::Select
+       - 1
+       - !GetAZs ""
+      CidrBlock: "20.0.4.0/24"
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: False
+
+  # Create internet gateway ...
+  InternetGW:
+    Type: "AWS::EC2::InternetGateway"
+
+  # ... and attach it to the VPC
+  AttachGateway:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGW
+
+  # Define route tables
+  MainRT:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Public
+  
+  PrivateRT:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC 
+      Tags:
+        - Key: Name
+          Value: Private
+
+  # Associate the subnets with the Route Tables
+  PublicRTAssociation1:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref Public1A
+      RouteTableId: !Ref MainRT
+
+  PublicRTAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref Public1B
+      RouteTableId: !Ref MainRT
+
+  PrivateRTSubnetAssociation1:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref Private1A
+      RouteTableId: !Ref PrivateRT
+        
+  PrivateRTSubnetAssociation2:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref Private1B
+      RouteTableId: !Ref PrivateRT
+
+  # Add route table rules
+  MainRTRule1:
+    Type: "AWS::EC2::Route"
+    DependsOn: InternetGW
+    Properties:
+      RouteTableId: !Ref MainRT
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGW
+
+  # Create cluster
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref NameOfCluster
+      CapacityProviders:
+       - FARGATE
+       - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+       - CapacityProvider: FARGATE
+         Weight: 1
+       - CapacityProvider: FARGATE_SPOT
+         Weight: 1
+
+Outputs:
+
+  CreatedVPC:
+    Description: The ID of the created VPC
+    Value: !Ref VPC
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, VPC]]
+
+  Subnet1:
+    Description: The ID of public subnet 1 in availability zone a
+    Value: !Ref Public1A
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, public-1A]]
+
+  Subnet2:
+    Description: The ID of public subnet 2 in availability zone b
+    Value: !Ref Public1B
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, public-1B]]
+  
+  Subnet3:
+    Description: The ID of private subnet 1 in availability zone a
+    Value: !Ref Private1A
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, private-1A]]
+      
+  Subnet4:
+    Description: The ID of private subnet 1 in availability zone b
+    Value: !Ref Private1B
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, private-1B]]
+
+  CreatedCluster:
+    Description: The ID of the created ECS cluster
+    Value: !Ref Cluster
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, Cluster]]

@@ -1,0 +1,542 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create the task definitions, generic task execution role and services for the ECS application"
+
+Parameters:
+
+  Prefix:
+    Description: "Provide a predix for identifying resources created for this applocation or use the default. "
+    Type: String
+    Default: app
+
+  Version:
+      Description: "This is mostly for keeping track with logs in case they are retained."
+      Type: String
+      Default: v0
+
+Resources:
+  # Add service discovery entries
+  IhubServiceDiscoveryEntry:
+    Type: 'AWS::ServiceDiscovery::Service' 
+    Properties:
+      Description: '"ihub" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: ihub
+      NamespaceId: !ImportValue devNamespace-backendNSid
+
+  WebServiceDiscoveryEntry:
+    Type: AWS::ServiceDiscovery::Service 
+    Properties:
+      Description: '"web" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: web
+      NamespaceId: !ImportValue devNamespace-backendNSid
+
+  OptServiceDiscoveryEntry:
+    Type: AWS::ServiceDiscovery::Service 
+    Properties:
+      Description: '"opt" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: opt
+      NamespaceId: !ImportValue devNamespace-backendNSid
+ 
+  NginxServiceDiscoveryEntry:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Description: '"nginx" service discovery entry in Cloud Map'
+      DnsConfig:
+        DnsRecords:
+        - TTL: 60
+          Type: A
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+      Name: nginx
+      NamespaceId: !ImportValue devNamespace-frontendNSid
+
+  # Service task definitions
+  IhubTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - uvicorn
+        - app.main:app
+        - --proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8000"
+        Environment:
+        - Name: DISPLAY_NAME
+          Value: 'Information Hub'
+        - Name: URL_PARAM
+          Value: 'ihub'
+        - Name: NGINX_SERVER
+          Value: !Sub 
+              - "${Extension}.${DNS}:8000"
+              - Extension:  !GetAtt NginxServiceDiscoveryEntry.Name
+                DNS: !ImportValue devNamespace-frontendHZnameserver
+        - Name: UVICORN_PORT
+          Value: '8000'
+        Essential: true
+        Image: << THE BACKEND CONTAINER IMAGE HERE >>
+        PortMappings:
+        - ContainerPort: 8000
+          HostPort: 8000
+          Protocol: tcp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref Prefix
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: !Ref Version
+        Name: ihub
+      Cpu: "256"
+      ExecutionRoleArn: !Ref GenericTaskExecutionRole
+      Family: !Join ['-', [!Ref Prefix, ihub]]
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+
+  OptTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - uvicorn
+        - app.main:app
+        - --proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8000"
+        Environment:
+        - Name: DISPLAY_NAME
+          Value: 'Optimizer'
+        - Name: URL_PARAM
+          Value: 'opt'
+        - Name: NGINX_SERVER
+          Value: !Sub 
+              - "${Extension}.${DNS}:8000"
+              - Extension:  !GetAtt NginxServiceDiscoveryEntry.Name
+                DNS: !ImportValue devNamespace-frontendHZnameserver
+        - Name: UVICORN_PORT
+          Value: '8000'
+        Essential: true
+        Image: << THE BACKEND CONTAINER IMAGE HERE >>
+        PortMappings:
+        - ContainerPort: 8000
+          HostPort: 8000
+          Protocol: tcp
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref Prefix
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: !Ref Version
+        Name: opt
+      Cpu: "256"
+      ExecutionRoleArn: !Ref GenericTaskExecutionRole
+      Family: !Join ['-', [!Ref Prefix, opt]]
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+  
+  WebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+      - Command:
+        - uvicorn
+        - app.main:app
+        - --proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8000"
+        Environment:
+        - Name: DISPLAY_NAME
+          Value: Web
+        - Name: URL_PARAM
+          Value: web
+        - Name: NGINX_SERVER
+          Value: !Sub 
+              - "${Extension}.${DNS}:8000"
+              - Extension:  !GetAtt NginxServiceDiscoveryEntry.Name
+                DNS: !ImportValue devNamespace-frontendHZnameserver
+        - Name: UVICORN_PORT
+          Value: '8000'
+        Essential: true
+        PortMappings:
+        - ContainerPort: 8000
+          HostPort: 8000
+          Protocol: tcp
+        Image: << THE BACKEND CONTAINER IMAGE HERE >>
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref Prefix
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: !Ref Version
+        Name: web
+      Cpu: "256"
+      ExecutionRoleArn: !Ref GenericTaskExecutionRole
+      Family: !Join ['-', [!Ref Prefix, 'web']]
+      Memory: "512"
+      NetworkMode: 'awsvpc'
+      RequiresCompatibilities:
+      - FARGATE
+    
+  NginxTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+      - Essential: true
+        Image: << THE FRONTEND CONTAINER IMAGE HERE >>
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref Prefix
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: !Ref Version
+        Name: nginx
+        Environment:
+          - Name: LISTEN
+            Value: '8000'
+          - Name: WEB_SERVER_PORT
+            Value: !Sub 
+              - "${Extension}.${DNS}:8000"
+              - Extension:  !GetAtt WebServiceDiscoveryEntry.Name
+                DNS: !ImportValue devNamespace-backendHZnameserver
+          - Name: OPT_SERVER_PORT
+            Value: !Sub 
+              - "${Extension}.${DNS}:8000"
+              - Extension:  !GetAtt OptServiceDiscoveryEntry.Name
+                DNS: !ImportValue devNamespace-backendHZnameserver
+          - Name: IHUB_SERVER_PORT
+            Value: !Sub 
+              - "${Extension}.${DNS}:8000"
+              - Extension:  !GetAtt IhubServiceDiscoveryEntry.Name
+                DNS: !ImportValue devNamespace-backendHZnameserver
+        PortMappings:
+        - ContainerPort: 8000
+          HostPort: 8000
+          Protocol: tcp
+      Cpu: "256"
+      ExecutionRoleArn: !Ref GenericTaskExecutionRole
+      Family: !Join ['-', [!Ref Prefix, nginx]]
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+      - FARGATE
+
+  # Create the services
+  IhubService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - NginxServiceDiscoveryEntry
+      - IhubServiceDiscoveryEntry
+      - WebServiceDiscoveryEntry
+      - OptServiceDiscoveryEntry
+    Properties:
+      ServiceName: 
+        Fn::Join: ['-', [!Ref Prefix, ihub]]
+      Cluster: !ImportValue devNetwork-Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref BackendContainerSecurityGroup
+          Subnets:
+            - Fn::ImportValue: !Sub devNetwork-public-1A
+            - Fn::ImportValue: !Sub devNetwork-public-1B
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - IhubServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: !Ref Prefix
+      - Key: com.docker.compose.service
+        Value: ihub
+      - Key: service.locator
+        Value: !Join [., [!GetAtt IhubServiceDiscoveryEntry.Name, !Join [., [!Ref Prefix, backend.dev:8000]]]]
+      TaskDefinition: !Ref IhubTaskDefinition
+
+  OptService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - NginxServiceDiscoveryEntry
+      - IhubServiceDiscoveryEntry
+      - WebServiceDiscoveryEntry
+      - OptServiceDiscoveryEntry
+    Properties:
+      ServiceName: !Join ['-', [!Ref Prefix, opt]]
+      Cluster: !ImportValue devNetwork-Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref BackendContainerSecurityGroup
+          Subnets:
+            - Fn::ImportValue:
+               !Sub devNetwork-public-1A
+            - Fn::ImportValue:
+               !Sub devNetwork-public-1B
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - OptServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: !Ref Prefix
+      - Key: com.docker.compose.service
+        Value: opt
+      - Key: service.locator
+        Value: !Join [., [!GetAtt OptServiceDiscoveryEntry.Name, !Join [., [!Ref Prefix, backend.dev:8000]]]]
+      TaskDefinition: !Ref OptTaskDefinition
+
+  WebService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - NginxServiceDiscoveryEntry
+      - IhubServiceDiscoveryEntry
+      - WebServiceDiscoveryEntry
+      - OptServiceDiscoveryEntry
+    Properties:
+      ServiceName: !Join ['-', [!Ref Prefix, web]]
+      Cluster: !ImportValue devNetwork-Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref BackendContainerSecurityGroup
+          Subnets:
+            - Fn::ImportValue:
+               !Sub devNetwork-public-1A
+            - Fn::ImportValue:
+               !Sub devNetwork-public-1B
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - WebServiceDiscoveryEntry
+          - Arn
+      Tags:
+      - Key: com.docker.compose.project
+        Value: !Ref Prefix
+      - Key: com.docker.compose.service
+        Value: web
+      - Key: service.locator
+        Value: !Join [., [!GetAtt WebServiceDiscoveryEntry.Name, !Join [., [!Ref Prefix, backend.dev:8000]]]]
+      TaskDefinition: !Ref WebTaskDefinition
+
+  NginxService:
+    Type: AWS::ECS::Service
+    DependsOn:
+    - WebService
+    - OptService
+    - IhubService
+    Properties:
+      ServiceName: !Join ['-', [!Ref Prefix, nginx]]
+      Cluster: !ImportValue devNetwork-Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref FrontendContainerSecurityGroup
+          Subnets:
+            - Fn::ImportValue:
+               !Sub devNetwork-public-1A
+            - Fn::ImportValue:
+               !Sub devNetwork-public-1B
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      ServiceRegistries:
+      - RegistryArn:
+          Fn::GetAtt:
+          - NginxServiceDiscoveryEntry
+          - Arn
+      TaskDefinition: !Ref NginxTaskDefinition
+      Tags:
+      - Key: com.docker.compose.project
+        Value: !Ref Prefix
+      - Key: com.docker.compose.service
+        Value: nginx
+      - Key: service.locator
+        Value: !Join [., [!GetAtt NginxServiceDiscoveryEntry.Name, !Join [., [!Ref Prefix, frontend.dev:8000]]]]
+      
+  BackendContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup      
+    Properties:
+     VpcId: !ImportValue devNetwork-VPC
+     GroupDescription: Allow traffic only from nginx service
+     SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref FrontendContainerSecurityGroup
+        IpProtocol: tcp
+        FromPort: 8000
+        ToPort: 8000
+
+  FrontendContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup      
+    Properties:
+     VpcId: !ImportValue devNetwork-VPC
+     GroupDescription: Allow all incoming HTTP(S) traffic
+     SecurityGroupIngress:
+       - CidrIp: '0.0.0.0/0'
+         IpProtocol: '-1'
+       - CidrIpv6: '::/0'
+         IpProtocol: '-1'
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref Prefix
+    DeletionPolicy: Delete
+    
+  GenericTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Condition: {}
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+      Policies:
+        - PolicyName: AmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+                # ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+              Resource: '*'
+      Tags:
+        - Key: com.docker.compose.project
+          Value: !Ref Prefix
+   
+Outputs:
+  
+  ihubTS:
+    Description: "ihub api task definitions"
+    Value: !Ref IhubTaskDefinition
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, ihubTS]]
+
+  webTS:
+    Description: "Web api task definitions"
+    Value: !Ref WebTaskDefinition
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, webTS]]
+
+  optTS:
+    Description: "Optimizer api task definitions"
+    Value: !Ref WebTaskDefinition
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, optTS]]
+
+  nginxTS:
+    Description: "Nginx server task definitions"
+    Value: !Ref NginxTaskDefinition
+    Export:
+      Name: !Join ['-', [!Ref AWS::StackName, nginxTS]]
+
+  ihubService:
+    Description: "ihub api service"
+    Value: !Ref IhubTaskDefinition
+
+  webService:
+    Description: "Web api service"
+    Value: !Ref WebTaskDefinition
+
+  optService:
+    Description: "Optimizer api service"
+    Value: !Ref WebTaskDefinition
+
+  nginxService:
+    Description: "Nginx server service"
+    Value: !Ref NginxTaskDefinition
+
+  securityGroupA:
+    Description: "Security group for backend services"
+    Value: !Ref BackendContainerSecurityGroup
+    Export: 
+      Name: !Join ['-', [!Ref AWS::StackName, SGbackend]]
+
+  securityGroupB:
+    Description: "Security group for frontend services"
+    Value: !Ref FrontendContainerSecurityGroup
+    Export: 
+      Name: !Join ['-', [!Ref AWS::StackName, SGFrontend]]

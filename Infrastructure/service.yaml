@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create the network for ECS services"
+
+Parameters:
+  Prefix:
+    Description: "Provide a predix for identifying resources created for this applocation or use the default. "
+    Type: String
+    Default: app
+
+  Version:
+      Description: "This is mostly for keeping track with logs in case they are retained."
+      Type: String
+      Default: v0
+
+Resources:
+  # Create a task definition
+  AppTaskDefinition: 
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties: 
+      ContainerDefinitions:
+        - # Optimizer API
+          Name: opt
+          Environment:
+            - Name: DISPLAY_NAME
+              Value: Optimizer
+            - Name: URL_PARAM
+              Value: opt
+            - Name: UVICORN_PORT
+              Value: '5000'
+            - Name: NGINX_SERVER
+              Value: 'localhost:8000' 
+          Essential: true
+          Image: >-
+            << THE BACKEND CONTAINER IMAGE HERE >>
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref Prefix
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref Version
+        - # Web API
+          Name: web
+          Environment:
+            - Name: DISPLAY_NAME
+              Value: 'Web'
+            - Name: URL_PARAM
+              Value: 'web'
+            - Name: UVICORN_PORT
+              Value: '5001'
+            - Name: NGINX_SERVER
+              Value: 'localhost:8000'
+          Essential: true
+          Image: >-
+            << THE BACKEND CONTAINER IMAGE HERE >>
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref Prefix
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref Version
+        - # Ihub API
+          Name: ihub
+          Environment:
+            - Name: DISPLAY_NAME
+              Value: 'Information Hub'
+            - Name: URL_PARAM
+              Value: 'ihub'
+            - Name: UVICORN_PORT
+              Value: '5002'
+            - Name: NGINX_SERVER
+              Value: 'localhost:8000'                
+          Essential: true
+          Image: >-
+            << THE BACKEND CONTAINER IMAGE HERE >>
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref Prefix
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref Version
+        - # Nginx web server
+          Name: nginx
+          Environment:
+            - Name: OPT_SERVER_PORT
+              Value: 'localhost:5000'
+            - Name: WEB_SERVER_PORT
+              Value: 'localhost:5001'
+            - Name: IHUB_SERVER_PORT
+              Value: 'localhost:5002'
+          DependsOn:
+            - Condition: START 
+              ContainerName: web
+            - Condition: START 
+              ContainerName: opt
+            - Condition: START 
+              ContainerName: ihub
+          Essential: true
+          Image: >-
+            << THE FRONTEND CONTAINER IMAGE HERE >>
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref Prefix
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref Version
+          PortMappings:
+            - ContainerPort: 8000
+              HostPort: 8000
+              Protocol: tcp
+      Cpu: '2048'
+      ExecutionRoleArn: !Ref AppTaskExecutionRole
+      Family: !Join ['-', [!Ref Prefix, app]]
+      Memory: '4096'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+
+  AppService: # Create the App service
+    Type: 'AWS::ECS::Service'
+    Properties:
+      Cluster: !ImportValue devNetwork-Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DeploymentController:
+        Type: ECS
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+          Subnets:
+            - !ImportValue devNetwork-public-1A
+            - !ImportValue devNetwork-public-1B
+      PlatformVersion: 1.4.0
+      PropagateTags: SERVICE
+      SchedulingStrategy: REPLICA
+      Tags:
+        - Key: com.docker.compose.project
+          Value: !Ref Prefix
+        - Key: com.docker.compose.service
+          Value: app
+      TaskDefinition: !Ref AppTaskDefinition
+
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup      
+    Properties:
+     VpcId: !ImportValue devNetwork-VPC
+     GroupDescription: Security Group for default network. Allow all traffic
+     SecurityGroupIngress:
+       - CidrIp: '0.0.0.0/0'
+         IpProtocol: '-1'
+       - CidrIpv6: '::/0'
+         IpProtocol: '-1' 
+
+  LogGroup:
+    Properties:
+      LogGroupName: !Ref Prefix
+    DeletionPolicy: Delete
+    Type: 'AWS::Logs::LogGroup'
+
+  AppTaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Condition: {}
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+      Policies:
+        - PolicyName: AmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+                # ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+              Resource: '*'
+      Tags:
+        - Key: com.docker.compose.project
+          Value: !Ref Prefix
+        - Key: com.docker.compose.service
+          Value: app

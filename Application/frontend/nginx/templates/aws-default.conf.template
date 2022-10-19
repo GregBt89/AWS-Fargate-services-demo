@@ -1,0 +1,25 @@
+server {
+
+    listen ${LISTEN};
+    server_name  localhost;
+
+    location / {   
+        root   /usr/share/nginx/html; 
+        index  index.html index.htm;                                                                                      
+    }     
+
+    location /opt {
+        proxy_pass          http://localhost:${OPT_PORT};
+
+    }
+
+    location /ihub {
+        proxy_pass          http://localhost:${IHUB_PORT};
+
+    }
+
+    location /web {
+        proxy_pass          http://localhost:${WEB_PORT};
+
+    }
+}
